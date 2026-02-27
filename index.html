@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIRCUS by MANIAC — Catalog</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="favicon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CIRCUS">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        :root {
+            --void: #050505;
+            --surface-0: #0a0a0a;
+            --surface-1: #0f0f0f;
+            --surface-2: #141414;
+            --surface-3: #1a1a1a;
+            --border-soft: #151515;
+            --border-med: #1f1f1f;
+            --border-strong: #2a2a2a;
+            --text-primary: #d4d4d4;
+            --text-secondary: #8a8a8a;
+            --text-tertiary: #555555;
+            --text-muted: #333333;
+            --sold-red: #c41a1a;
+            --font-display: 'Cormorant Garamond', 'Georgia', serif;
+            --font-body: -apple-system, 'Helvetica Neue', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--void); color: var(--text-primary);
+            font-family: var(--font-body); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+        }
+        ::selection { background: var(--text-primary); color: var(--void); }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--void); }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+        input, button, select { font-family: var(--font-body); outline: none; }
+        a { color: inherit; text-decoration: none; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .skeleton {
+            background: linear-gradient(90deg, var(--surface-1) 25%, var(--surface-2) 50%, var(--surface-1) 75%);
+            background-size: 200% 100%; animation: shimmer 1.8s infinite;
+        }
+        .sold-overlay {
+            position: absolute; inset: 0; background: rgba(5,5,5,0.55);
+            display: flex; align-items: center; justify-content: center; z-index: 2;
+        }
+        .sold-text {
+            font-family: var(--font-display); font-size: 28px; font-weight: 600;
+            font-style: italic; letter-spacing: 0.15em; color: var(--sold-red);
+            text-transform: uppercase; border: 1.5px solid var(--sold-red);
+            padding: 6px 20px; background: rgba(5,5,5,0.6);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        const BASE_URL = "https://circusbymaniac.shop";
+
+        const COLLECTIONS = {
+            "ifsixwasnine-beyond-the-time-man": { brand: "IFSIXWASNINE", line: "BEYOND", gender: "MAN" },
+            "ifsixwasnine-limited-man": { brand: "IFSIXWASNINE", line: "LIMITED", gender: "MAN" },
+            "lgb-beyond-the-time-man": { brand: "L.G.B.", line: "BEYOND", gender: "MAN" },
+            "lgb-limited-man": { brand: "L.G.B.", line: "LIMITED", gender: "MAN" },
+            "ifsixwasnine-beyond-the-time-woman": { brand: "IFSIXWASNINE", line: "BEYOND", gender: "WOMAN" },
+            "ifsixwasnine-limited-woman": { brand: "IFSIXWASNINE", line: "LIMITED", gender: "WOMAN" },
+            "l-g-b-beyond-the-time-woman": { brand: "L.G.B.", line: "BEYOND", gender: "WOMAN" },
+            "lgb-limited-woman": { brand: "L.G.B.", line: "LIMITED", gender: "WOMAN" },
+        };
+
+        const JPY_USD = 0.0067;
+
+        async function fetchAllProducts() {
+            const allProducts = []; const seen = new Set();
+            for (const [slug, meta] of Object.entries(COLLECTIONS)) {
+                let page = 1;
+                while (true) {
+                    try {
+                        const resp = await fetch(`${BASE_URL}/collections/${slug}/products.json?limit=250&page=${page}`);
+                        const data = await resp.json();
+                        const products = data.products || [];
+                        if (!products.length) break;
+                        for (const p of products) {
+                            if (seen.has(p.handle)) continue;
+                            seen.add(p.handle);
+                            const variants = p.variants || [];
+                            allProducts.push({
+                                handle: p.handle, title: p.title,
+                                image: p.images?.[0]?.src || "",
+                                price: parseFloat(variants[0]?.price || "0"),
+                                available: variants.some(v => v.available),
+                                sizes: [...new Set(variants.map(v => v.option1).filter(Boolean))],
+                                createdAt: p.created_at,
+                                url: `${BASE_URL}/collections/${slug}/products/${p.handle}`,
+                                brand: meta.brand, line: meta.line, gender: meta.gender,
+                            });
+                        }
+                        if (products.length < 250) break;
+                        page++;
+                    } catch { break; }
+                }
+            }
+            return allProducts;
+        }
+
+        function Header({ count, loading, onLogoClick }) {
+            return (
+                <header style={{
+                    position: 'sticky', top: 0, zIndex: 100,
+                    borderBottom: '1px solid var(--border-soft)',
+                    background: 'rgba(5,5,5,0.9)',
+                    backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+                }}>
+                    <div style={{
+                        maxWidth: 1440, margin: '0 auto', padding: '14px 24px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                        <button onClick={onLogoClick} style={{
+                            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        }}>
+                            <h1 style={{
+                                fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 300,
+                                fontStyle: 'italic', letterSpacing: '0.08em', color: 'var(--text-primary)',
+                            }}>
+                                Circus <span style={{ fontWeight: 400, fontStyle: 'normal', color: 'var(--text-tertiary)', fontSize: 14 }}>by</span> Maniac
+                            </h1>
+                        </button>
+                        <span style={{ fontSize: 9, color: 'var(--text-tertiary)', letterSpacing: '0.12em' }}>
+                            {loading ? 'LOADING...' : `${count} ITEMS`}
+                        </span>
+                    </div>
+                </header>
+            );
+        }
+
+        function BrandTabs({ active, onChange }) {
+            const tabs = ['ALL', 'IFSIXWASNINE', 'L.G.B.'];
+            return (
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-soft)' }}>
+                    {tabs.map(tab => (
+                        <button key={tab} onClick={() => onChange(tab)} style={{
+                            flex: 1, padding: '13px 0', background: 'none', border: 'none',
+                            borderBottom: active === tab ? '1px solid var(--text-primary)' : '1px solid transparent',
+                            color: active === tab ? 'var(--text-primary)' : 'var(--text-muted)',
+                            fontSize: 9, fontWeight: 500, letterSpacing: '0.14em', cursor: 'pointer',
+                            transition: 'all 0.25s ease', fontFamily: 'var(--font-body)',
+                        }}>{tab}</button>
+                    ))}
+                </div>
+            );
+        }
+
+        function Pill({ active, onClick, children }) {
+            return (
+                <button onClick={onClick} style={{
+                    padding: '5px 12px', background: active ? 'var(--text-primary)' : 'transparent',
+                    border: `1px solid ${active ? 'var(--text-primary)' : 'var(--border-med)'}`,
+                    borderRadius: 2, color: active ? 'var(--void)' : 'var(--text-tertiary)',
+                    fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', cursor: 'pointer',
+                    transition: 'all 0.2s ease', fontFamily: 'var(--font-body)',
+                }}>{children}</button>
+            );
+        }
+
+        function Controls({ search, onSearch, gender, onGender, filters, onFilters, sizes }) {
+            const { availableOnly, sortBy, sizes: activeSizes } = filters;
+            const toggleSize = s => {
+                const ns = activeSizes.includes(s) ? activeSizes.filter(x => x !== s) : [...activeSizes, s];
+                onFilters({ ...filters, sizes: ns });
+            };
+            return (
+                <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ position: 'relative' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" style={{
+                            position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
+                        }}>
+                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        <input type="text" value={search} onChange={e => onSearch(e.target.value)}
+                            placeholder="Search..."
+                            style={{
+                                width: '100%', padding: '9px 12px 9px 34px',
+                                background: 'var(--surface-1)', border: '1px solid var(--border-med)',
+                                borderRadius: 2, color: 'var(--text-primary)', fontSize: 11,
+                                letterSpacing: '0.02em', transition: 'border-color 0.2s',
+                            }}
+                            onFocus={e => e.target.style.borderColor = 'var(--border-strong)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--border-med)'}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                            {['ALL', 'MAN', 'WOMAN'].map(g => (
+                                <Pill key={g} active={gender === g} onClick={() => onGender(g)}>{g}</Pill>
+                            ))}
+                            <div style={{ width: 1, height: 20, background: 'var(--border-med)', margin: '0 4px' }} />
+                            {sizes.map(s => (
+                                <button key={s} onClick={() => toggleSize(s)} style={{
+                                    width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: activeSizes.includes(s) ? 'var(--text-primary)' : 'transparent',
+                                    border: `1px solid ${activeSizes.includes(s) ? 'var(--text-primary)' : 'var(--border-med)'}`,
+                                    borderRadius: 2, color: activeSizes.includes(s) ? 'var(--void)' : 'var(--text-tertiary)',
+                                    fontSize: 10, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                    fontFamily: 'var(--font-body)',
+                                }}>{s}</button>
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <Pill active={availableOnly} onClick={() => onFilters({ ...filters, availableOnly: !availableOnly })}>
+                                AVAILABLE
+                            </Pill>
+                            <div style={{ position: 'relative' }}>
+                                <select value={sortBy} onChange={e => onFilters({ ...filters, sortBy: e.target.value })} style={{
+                                    padding: '5px 24px 5px 10px', background: 'var(--surface-1)',
+                                    border: '1px solid var(--border-med)', borderRadius: 2,
+                                    color: 'var(--text-tertiary)', fontSize: 9, fontWeight: 500,
+                                    letterSpacing: '0.08em', cursor: 'pointer', appearance: 'none',
+                                    fontFamily: 'var(--font-body)',
+                                }}>
+                                    <option value="newest">NEWEST</option>
+                                    <option value="oldest">OLDEST</option>
+                                    <option value="price-asc">PRICE ↑</option>
+                                    <option value="price-desc">PRICE ↓</option>
+                                    <option value="title">A—Z</option>
+                                </select>
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3" style={{
+                                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none',
+                                }}><polyline points="6 9 12 15 18 9"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ProductCard({ product, index }) {
+            const [imgLoaded, setImgLoaded] = useState(false);
+            const [hovered, setHovered] = useState(false);
+            const usd = Math.round(product.price * JPY_USD);
+            const sizeStr = product.sizes.length > 0 ? product.sizes[0] : '—';
+
+            return (
+                <a href={product.url} target="_blank" rel="noopener noreferrer"
+                    onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+                    style={{
+                        display: 'block', background: 'var(--surface-0)',
+                        border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-soft)'}`,
+                        overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.25s ease',
+                        animation: `slideUp 0.35s ease ${Math.min(index * 0.015, 0.4)}s both`,
+                    }}
+                >
+                    <div style={{
+                        position: 'relative', paddingBottom: '130%', background: 'var(--surface-1)', overflow: 'hidden',
+                    }}>
+                        {!imgLoaded && <div className="skeleton" style={{ position: 'absolute', inset: 0 }} />}
+                        {product.image && (
+                            <img
+                                src={product.image.replace(/(\.\w+)\?/, '_600x600$1?')}
+                                alt={product.title} loading="lazy"
+                                onLoad={() => setImgLoaded(true)}
+                                style={{
+                                    position: 'absolute', inset: 0, width: '100%', height: '100%',
+                                    objectFit: 'cover', opacity: imgLoaded ? 1 : 0,
+                                    transition: 'opacity 0.4s ease, transform 0.5s ease',
+                                    transform: hovered ? 'scale(1.04)' : 'scale(1)',
+                                    filter: !product.available ? 'saturate(0.3)' : 'none',
+                                }}
+                            />
+                        )}
+                        {!product.available && (
+                            <div className="sold-overlay"><div className="sold-text">Sold</div></div>
+                        )}
+                    </div>
+                    <div style={{ padding: '10px 10px 12px' }}>
+                        <h3 style={{
+                            fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 400,
+                            color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            lineHeight: 1.35, marginBottom: 5,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{product.title}</h3>
+                        <div style={{
+                            fontSize: 13, fontWeight: 500,
+                            color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            marginBottom: 8, letterSpacing: '0.02em',
+                        }}>
+                            ${usd}
+                            <span style={{
+                                color: 'var(--text-tertiary)', fontSize: 11, marginLeft: 6, fontWeight: 400,
+                            }}>¥{product.price.toLocaleString()}</span>
+                        </div>
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        }}>
+                            <span style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
+                                {sizeStr === 'ONE SIZE' || sizeStr === 'F' ? 'OS' : sizeStr}
+                                <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>·</span>
+                                {product.gender}
+                            </span>
+                            <span style={{
+                                fontSize: 10, letterSpacing: '0.06em', color: 'var(--text-secondary)', fontStyle: 'italic',
+                            }}>{product.line}</span>
+                        </div>
+                    </div>
+                </a>
+            );
+        }
+
+        function ProductGrid({ products }) {
+            if (!products.length) {
+                return (
+                    <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-tertiary)' }}>
+                        <p style={{
+                            fontFamily: 'var(--font-display)', fontSize: 20, fontStyle: 'italic',
+                            fontWeight: 300, opacity: 0.5,
+                        }}>Nothing found</p>
+                    </div>
+                );
+            }
+            return (
+                <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8,
+                }}>
+                    {products.map((p, i) => <ProductCard key={p.handle} product={p} index={i} />)}
+                </div>
+            );
+        }
+
+        function LoadingGrid() {
+            return (
+                <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8,
+                }}>
+                    {Array.from({ length: 24 }).map((_, i) => (
+                        <div key={i} style={{
+                            background: 'var(--surface-0)', border: '1px solid var(--border-soft)', overflow: 'hidden',
+                            animation: `fadeIn 0.3s ease ${i * 0.02}s both`,
+                        }}>
+                            <div className="skeleton" style={{ paddingBottom: '130%' }} />
+                            <div style={{ padding: 10 }}>
+                                <div className="skeleton" style={{ height: 13, marginBottom: 6 }} />
+                                <div className="skeleton" style={{ height: 11, width: '50%' }} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        function App() {
+            const [allProducts, setAllProducts] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [search, setSearch] = useState('');
+            const [brand, setBrand] = useState('ALL');
+            const [gender, setGender] = useState('ALL');
+            const [filters, setFilters] = useState({ availableOnly: false, sortBy: 'newest', sizes: [] });
+            const [visible, setVisible] = useState(60);
+            const loaderRef = useRef(null);
+
+            useEffect(() => {
+                fetchAllProducts().then(p => { setAllProducts(p); setLoading(false); });
+            }, []);
+
+            useEffect(() => {
+                const obs = new IntersectionObserver(([e]) => {
+                    if (e.isIntersecting) setVisible(v => v + 40);
+                }, { threshold: 0.1 });
+                if (loaderRef.current) obs.observe(loaderRef.current);
+                return () => obs.disconnect();
+            }, [loading]);
+
+            useEffect(() => { setVisible(60); }, [search, brand, gender, filters]);
+
+            const handleLogoClick = () => {
+                setBrand('ALL'); setGender('ALL'); setSearch('');
+                setFilters({ availableOnly: false, sortBy: 'newest', sizes: [] });
+            };
+
+            const availSizes = useMemo(() => {
+                const s = new Set();
+                allProducts.forEach(p => p.sizes.forEach(x => s.add(x)));
+                return ['0', '1', '2', '3', 'F'].filter(x => s.has(x));
+            }, [allProducts]);
+
+            const filtered = useMemo(() => {
+                let r = allProducts;
+                if (brand !== 'ALL') r = r.filter(p => p.brand === brand);
+                if (gender !== 'ALL') r = r.filter(p => p.gender === gender);
+                if (search.trim()) {
+                    const q = search.toLowerCase().trim();
+                    r = r.filter(p => p.title.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q));
+                }
+                if (filters.availableOnly) r = r.filter(p => p.available);
+                if (filters.sizes.length) r = r.filter(p => filters.sizes.some(s => p.sizes.includes(s)));
+                const sorted = [...r];
+                switch (filters.sortBy) {
+                    case 'newest': sorted.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')); break;
+                    case 'oldest': sorted.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')); break;
+                    case 'price-asc': sorted.sort((a, b) => a.price - b.price); break;
+                    case 'price-desc': sorted.sort((a, b) => b.price - a.price); break;
+                    case 'title': sorted.sort((a, b) => a.title.localeCompare(b.title)); break;
+                }
+                return sorted;
+            }, [allProducts, brand, gender, search, filters]);
+
+            const shown = filtered.slice(0, visible);
+
+            return (
+                <div style={{ minHeight: '100vh' }}>
+                    <Header count={filtered.length} loading={loading} onLogoClick={handleLogoClick} />
+                    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '0 16px' }}>
+                        <BrandTabs active={brand} onChange={setBrand} />
+                        <Controls
+                            search={search} onSearch={setSearch}
+                            gender={gender} onGender={setGender}
+                            filters={filters} onFilters={setFilters}
+                            sizes={availSizes}
+                        />
+                        {!loading && (
+                            <div style={{
+                                fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', padding: '0 0 8px',
+                            }}>
+                                {shown.length === filtered.length
+                                    ? `${filtered.length} PRODUCTS`
+                                    : `${shown.length} OF ${filtered.length} PRODUCTS`
+                                }
+                            </div>
+                        )}
+                        <div style={{ paddingBottom: 80 }}>
+                            {loading ? <LoadingGrid /> : (
+                                <>
+                                    <ProductGrid products={shown} />
+                                    {visible < filtered.length && (
+                                        <div ref={loaderRef} style={{
+                                            textAlign: 'center', padding: '40px 0',
+                                            fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
+                                        }}>···</div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
