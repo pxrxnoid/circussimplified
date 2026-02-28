@@ -177,15 +177,37 @@
         function SizeDropdown({ activeSizes, onToggle }) {
             const [open, setOpen] = useState(false);
             const ref = useRef(null);
+            const btnRef = useRef(null);
+            const [pos, setPos] = useState({ left: 0 });
             useEffect(() => {
                 const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
                 document.addEventListener('mousedown', handler);
                 return () => document.removeEventListener('mousedown', handler);
             }, []);
+            useEffect(() => {
+                if (open && btnRef.current) {
+                    const rect = btnRef.current.getBoundingClientRect();
+                    const menuW = 200;
+                    const centerX = rect.left + rect.width / 2 - menuW / 2;
+                    const safeLeft = Math.max(8, Math.min(centerX, window.innerWidth - menuW - 8));
+                    setPos({ left: safeLeft - rect.left + (rect.width / 2 - menuW / 2) < -rect.left + 8 ? 8 - rect.left : centerX - rect.left });
+                }
+            }, [open]);
             const activeCount = activeSizes.length;
+            // Compute safe left so dropdown doesn't go off screen
+            const getDropdownStyle = () => {
+                if (!btnRef.current) return { left: '50%', transform: 'translateX(-50%)' };
+                const rect = btnRef.current.getBoundingClientRect();
+                const menuW = 200;
+                const idealLeft = -(menuW / 2) + (rect.width / 2);
+                const absLeft = rect.left + idealLeft;
+                if (absLeft < 8) return { left: -(rect.left - 8) };
+                if (absLeft + menuW > window.innerWidth - 8) return { right: -(window.innerWidth - 8 - rect.right) };
+                return { left: idealLeft };
+            };
             return (
                 <div ref={ref} style={{ position: 'relative' }}>
-                    <button onClick={() => setOpen(o => !o)} style={{
+                    <button ref={btnRef} onClick={() => setOpen(o => !o)} style={{
                         padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5,
                         background: activeCount > 0 ? 'var(--text-primary)' : 'transparent',
                         border: `1px solid ${activeCount > 0 ? 'var(--text-primary)' : 'var(--border-med)'}`,
@@ -197,7 +219,7 @@
                         <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={activeCount > 0 ? 'var(--void)' : 'var(--text-muted)'} strokeWidth="3" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                     {open && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, padding: '10px 0', zIndex: 50, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                        <div style={{ position: 'absolute', top: '100%', marginTop: 4, background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, padding: '10px 0', zIndex: 50, width: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', ...getDropdownStyle() }}>
                             <div style={{ padding: '0 12px 6px', fontSize: 8, color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 500 }}>TOPS</div>
                             {TOP_SIZES.map(size => {
                                 const isActive = size.values.some(v => activeSizes.includes(v));
@@ -232,6 +254,55 @@
             );
         }
 
+        const SORT_OPTIONS = [
+            { value: 'newest', label: 'NEWEST' },
+            { value: 'oldest', label: 'OLDEST' },
+            { value: 'price-asc', label: 'PRICE ↑' },
+            { value: 'price-desc', label: 'PRICE ↓' },
+            { value: 'title', label: 'A—Z' },
+        ];
+
+        function SortDropdown({ value, onChange }) {
+            const [open, setOpen] = useState(false);
+            const ref = useRef(null);
+            useEffect(() => {
+                const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+                document.addEventListener('mousedown', handler);
+                return () => document.removeEventListener('mousedown', handler);
+            }, []);
+            const current = SORT_OPTIONS.find(o => o.value === value) || SORT_OPTIONS[0];
+            return (
+                <div ref={ref} style={{ position: 'relative' }}>
+                    <button onClick={() => setOpen(o => !o)} style={{
+                        padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5,
+                        background: 'transparent', border: '1px solid var(--border-med)',
+                        borderRadius: 2, color: 'var(--text-tertiary)',
+                        fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', cursor: 'pointer',
+                        transition: 'all 0.2s ease', fontFamily: 'var(--font-body)',
+                    }}>
+                        {current.label}
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3"
+                            style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    {open && (
+                        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, padding: '4px 0', zIndex: 50, minWidth: 120, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            {SORT_OPTIONS.map(opt => (
+                                <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }} style={{
+                                    display: 'block', width: '100%', padding: '6px 12px', background: 'none', border: 'none',
+                                    textAlign: 'left', fontSize: 9, fontWeight: 500, letterSpacing: '0.06em', cursor: 'pointer',
+                                    color: value === opt.value ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    transition: 'background 0.1s', fontFamily: 'var(--font-body)',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-3)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                                >{opt.label}</button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         function Controls({ search, onSearch, gender, onGender, filters, onFilters }) {
             const { availableOnly, sortBy, sizes: activeSizes } = filters;
             const handleSizeToggle = (values, isActive) => {
@@ -254,14 +325,7 @@
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <Pill active={availableOnly} onClick={() => onFilters({ ...filters, availableOnly: !availableOnly })}>AVAILABLE</Pill>
-                            <div style={{ position: 'relative' }}>
-                                <select value={sortBy} onChange={e => onFilters({ ...filters, sortBy: e.target.value })} style={{ padding: '5px 24px 5px 10px', background: 'var(--surface-1)', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-tertiary)', fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', cursor: 'pointer', appearance: 'none', fontFamily: 'var(--font-body)' }}>
-                                    <option value="newest">NEWEST</option><option value="oldest">OLDEST</option>
-                                    <option value="price-asc">PRICE ↑</option><option value="price-desc">PRICE ↓</option>
-                                    <option value="title">A—Z</option>
-                                </select>
-                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><polyline points="6 9 12 15 18 9"/></svg>
-                            </div>
+                            <SortDropdown value={sortBy} onChange={v => onFilters({ ...filters, sortBy: v })} />
                         </div>
                     </div>
                 </div>
