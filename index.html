@@ -16,59 +16,38 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         :root {
-            --void: #050505;
-            --surface-0: #0a0a0a;
-            --surface-1: #0f0f0f;
-            --surface-2: #141414;
-            --surface-3: #1a1a1a;
-            --border-soft: #151515;
-            --border-med: #1f1f1f;
-            --border-strong: #2a2a2a;
-            --text-primary: #d4d4d4;
-            --text-secondary: #8a8a8a;
-            --text-tertiary: #555555;
-            --text-muted: #333333;
+            --void: #050505; --surface-0: #0a0a0a; --surface-1: #0f0f0f;
+            --surface-2: #141414; --surface-3: #1a1a1a;
+            --border-soft: #151515; --border-med: #1f1f1f; --border-strong: #2a2a2a;
+            --text-primary: #d4d4d4; --text-secondary: #8a8a8a;
+            --text-tertiary: #555555; --text-muted: #333333;
             --sold-red: #c41a1a;
             --font-display: 'Cormorant Garamond', 'Georgia', serif;
             --font-body: -apple-system, 'Helvetica Neue', sans-serif;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: var(--void); color: var(--text-primary);
-            font-family: var(--font-body); -webkit-font-smoothing: antialiased; overflow-x: hidden;
-        }
+        body { background: var(--void); color: var(--text-primary); font-family: var(--font-body); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
         ::selection { background: var(--text-primary); color: var(--void); }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: var(--void); }
         ::-webkit-scrollbar-thumb { background: var(--border-strong); }
         input, button, select { font-family: var(--font-body); outline: none; }
         a { color: inherit; text-decoration: none; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .skeleton {
-            background: linear-gradient(90deg, var(--surface-1) 25%, var(--surface-2) 50%, var(--surface-1) 75%);
-            background-size: 200% 100%; animation: shimmer 1.8s infinite;
-        }
-        .sold-overlay {
-            position: absolute; inset: 0; background: rgba(5,5,5,0.55);
-            display: flex; align-items: center; justify-content: center; z-index: 2;
-        }
-        .sold-text {
-            font-family: var(--font-display); font-size: 28px; font-weight: 600;
-            font-style: italic; letter-spacing: 0.15em; color: var(--sold-red);
-            text-transform: uppercase; border: 1.5px solid var(--sold-red);
-            padding: 6px 20px; background: rgba(5,5,5,0.6);
-        }
+        .skeleton { background: linear-gradient(90deg, var(--surface-1) 25%, var(--surface-2) 50%, var(--surface-1) 75%); background-size: 200% 100%; animation: shimmer 1.8s infinite; }
+        .sold-overlay { position: absolute; inset: 0; background: rgba(5,5,5,0.55); display: flex; align-items: center; justify-content: center; z-index: 2; }
+        .sold-text { font-family: var(--font-display); font-size: 28px; font-weight: 600; font-style: italic; letter-spacing: 0.15em; color: var(--sold-red); text-transform: uppercase; border: 1.5px solid var(--sold-red); padding: 6px 20px; background: rgba(5,5,5,0.6); }
+        .similar-btn { position: absolute; bottom: 8px; right: 8px; z-index: 3; width: 26px; height: 26px; border-radius: 2px; background: rgba(5,5,5,0.5); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.08); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .similar-btn:hover { background: rgba(5,5,5,0.7); border-color: rgba(255,255,255,0.15); }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
-
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const BASE_URL = "https://circusbymaniac.shop";
-
         const COLLECTIONS = {
             "ifsixwasnine-beyond-the-time-man": { brand: "IFSIXWASNINE", line: "BEYOND", gender: "MAN" },
             "ifsixwasnine-limited-man": { brand: "IFSIXWASNINE", line: "LIMITED", gender: "MAN" },
@@ -79,7 +58,6 @@
             "l-g-b-beyond-the-time-woman": { brand: "L.G.B.", line: "BEYOND", gender: "WOMAN" },
             "lgb-limited-woman": { brand: "L.G.B.", line: "LIMITED", gender: "WOMAN" },
         };
-
         const JPY_USD = 0.0067;
 
         async function fetchAllProducts() {
@@ -97,8 +75,7 @@
                             seen.add(p.handle);
                             const variants = p.variants || [];
                             allProducts.push({
-                                handle: p.handle, title: p.title,
-                                image: p.images?.[0]?.src || "",
+                                handle: p.handle, title: p.title, image: p.images?.[0]?.src || "",
                                 price: parseFloat(variants[0]?.price || "0"),
                                 available: variants.some(v => v.available),
                                 sizes: [...new Set(variants.map(v => v.option1).filter(Boolean))],
@@ -115,25 +92,48 @@
             return allProducts;
         }
 
+        // ─── Smart Similar Search ───
+        const BRAND_WORDS = ['if', 'six', 'was', 'nine', 'ifsixwasnine', 'l.g.b.', 'lgb', 'l.g.b', 'circus', 'maniac'];
+        const CODE_SYNONYMS = {
+            'jk': ['jk', 'jacket'], 'tk': ['tk', 'tank'], 'txs': ['txs', 'shirt'],
+            'trd': ['trd', 'trousers', 'pants'], 'bcm': ['bcm', 'jeans', 'denim'],
+            'sbcm': ['sbcm', 'jeans', 'denim'], 'btf': ['btf', 'jeans', 'denim'],
+            'ct': ['ct', 'coat'], 'vs': ['vs', 'vest'], 'sw': ['sw', 'sweater'],
+            'pk': ['pk', 'parka'], 'bl': ['bl', 'blouson'], 'sh': ['sh', 'shorts'],
+            'bg': ['bg', 'bag'], 'bt': ['bt', 'boots', 'boot'], 'cs': ['cs', 'cutsew'],
+            'op': ['op', 'onepiece', 'dress'], 'sk': ['sk', 'skirt'], 'ht': ['ht', 'hat'],
+            'blt': ['blt', 'belt'], 'gv': ['gv', 'gloves'],
+        };
+        function extractSearchTerms(title) {
+            const parts = title.replace(/\//g, ' ').replace(/[()]/g, '').toLowerCase().split(/\s+/);
+            const meaningful = parts.filter(p => p.length > 0 && !BRAND_WORDS.includes(p));
+            const searchTerms = new Set();
+            for (const part of meaningful) {
+                const code = Object.keys(CODE_SYNONYMS).find(c => part === c || part.match(new RegExp(`^${c}\\d*$`)));
+                if (code) { CODE_SYNONYMS[code].forEach(s => searchTerms.add(s)); searchTerms.add(code); }
+                else if (part.length > 1) searchTerms.add(part);
+            }
+            return [...searchTerms];
+        }
+
+        // ─── Size mapping ───
+        const TOP_SIZES = [
+            { label: '0 / XS', values: ['0', 'XS', 'xs'] },
+            { label: '1 / S', values: ['1', 'S', 's'] },
+            { label: '2 / M', values: ['2', 'M', 'm'] },
+            { label: '3 / L', values: ['3', 'L', 'l'] },
+            { label: 'F', values: ['F', 'f', 'ONE SIZE', 'One Size', 'one size', 'FREE', 'Free'] },
+        ];
+        const BOTTOM_SIZES = ['26', '27', '28', '29', '30', '31', '32', '33', 'F'];
+
+        // ─── Components ───
+
         function Header({ count, loading, onLogoClick }) {
             return (
-                <header style={{
-                    position: 'sticky', top: 0, zIndex: 100,
-                    borderBottom: '1px solid var(--border-soft)',
-                    background: 'rgba(5,5,5,0.9)',
-                    backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
-                }}>
-                    <div style={{
-                        maxWidth: 1440, margin: '0 auto', padding: '14px 24px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    }}>
-                        <button onClick={onLogoClick} style={{
-                            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                        }}>
-                            <h1 style={{
-                                fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 300,
-                                fontStyle: 'italic', letterSpacing: '0.08em', color: 'var(--text-primary)',
-                            }}>
+                <header style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: '1px solid var(--border-soft)', background: 'rgba(5,5,5,0.9)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}>
+                    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <button onClick={onLogoClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 300, fontStyle: 'italic', letterSpacing: '0.08em', color: 'var(--text-primary)' }}>
                                 Circus <span style={{ fontWeight: 400, fontStyle: 'normal', color: 'var(--text-tertiary)', fontSize: 14 }}>by</span> Maniac
                             </h1>
                         </button>
@@ -174,70 +174,93 @@
             );
         }
 
-        function Controls({ search, onSearch, gender, onGender, filters, onFilters, sizes }) {
+        function SizeDropdown({ activeSizes, onToggle }) {
+            const [open, setOpen] = useState(false);
+            const ref = useRef(null);
+            useEffect(() => {
+                const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+                document.addEventListener('mousedown', handler);
+                return () => document.removeEventListener('mousedown', handler);
+            }, []);
+            const activeCount = activeSizes.length;
+            return (
+                <div ref={ref} style={{ position: 'relative' }}>
+                    <button onClick={() => setOpen(o => !o)} style={{
+                        padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 5,
+                        background: activeCount > 0 ? 'var(--text-primary)' : 'transparent',
+                        border: `1px solid ${activeCount > 0 ? 'var(--text-primary)' : 'var(--border-med)'}`,
+                        borderRadius: 2, color: activeCount > 0 ? 'var(--void)' : 'var(--text-tertiary)',
+                        fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', cursor: 'pointer',
+                        transition: 'all 0.2s ease', fontFamily: 'var(--font-body)',
+                    }}>
+                        SIZE{activeCount > 0 ? ` (${activeCount})` : ''}
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={activeCount > 0 ? 'var(--void)' : 'var(--text-muted)'} strokeWidth="3" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    {open && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, padding: '10px 0', zIndex: 50, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                            <div style={{ padding: '0 12px 6px', fontSize: 8, color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 500 }}>TOPS</div>
+                            {TOP_SIZES.map(size => {
+                                const isActive = size.values.some(v => activeSizes.includes(v));
+                                return (
+                                    <button key={size.label} onClick={() => onToggle(size.values, isActive)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '5px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-3)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                        <span style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0, border: `1.5px solid ${isActive ? 'var(--text-primary)' : 'var(--text-muted)'}`, background: isActive ? 'var(--text-primary)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {isActive && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--void)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                        </span>
+                                        <span style={{ fontSize: 10, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', letterSpacing: '0.04em' }}>{size.label}</span>
+                                    </button>
+                                );
+                            })}
+                            <div style={{ height: 1, background: 'var(--border-med)', margin: '6px 0' }} />
+                            <div style={{ padding: '4px 12px 6px', fontSize: 8, color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 500 }}>BOTTOMS</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, padding: '0 10px 4px' }}>
+                                {BOTTOM_SIZES.map(s => {
+                                    const isActive = activeSizes.includes(s);
+                                    return (
+                                        <button key={s} onClick={() => onToggle([s], isActive)} style={{ minWidth: 28, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', background: isActive ? 'var(--text-primary)' : 'transparent', border: `1px solid ${isActive ? 'var(--text-primary)' : 'var(--border-med)'}`, borderRadius: 2, color: isActive ? 'var(--void)' : 'var(--text-tertiary)', fontSize: 9, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'var(--font-body)' }}>{s}</button>
+                                    );
+                                })}
+                            </div>
+                            {activeSizes.length > 0 && (<>
+                                <div style={{ height: 1, background: 'var(--border-med)', margin: '6px 0' }} />
+                                <button onClick={() => onToggle('CLEAR_ALL', false)} style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'none', border: 'none', textAlign: 'left', fontSize: 9, color: 'var(--text-tertiary)', letterSpacing: '0.06em', cursor: 'pointer', transition: 'color 0.15s' }}
+                                onMouseEnter={e => e.target.style.color = 'var(--text-secondary)'} onMouseLeave={e => e.target.style.color = 'var(--text-tertiary)'}>CLEAR ALL</button>
+                            </>)}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function Controls({ search, onSearch, gender, onGender, filters, onFilters }) {
             const { availableOnly, sortBy, sizes: activeSizes } = filters;
-            const toggleSize = s => {
-                const ns = activeSizes.includes(s) ? activeSizes.filter(x => x !== s) : [...activeSizes, s];
-                onFilters({ ...filters, sizes: ns });
+            const handleSizeToggle = (values, isActive) => {
+                if (values === 'CLEAR_ALL') { onFilters({ ...filters, sizes: [] }); return; }
+                const newSizes = isActive ? activeSizes.filter(s => !values.includes(s)) : [...activeSizes, ...values.filter(v => !activeSizes.includes(v))];
+                onFilters({ ...filters, sizes: newSizes });
             };
             return (
                 <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div style={{ position: 'relative' }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" style={{
-                            position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-                        }}>
-                            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                        </svg>
-                        <input type="text" value={search} onChange={e => onSearch(e.target.value)}
-                            placeholder="Search..."
-                            style={{
-                                width: '100%', padding: '9px 12px 9px 34px',
-                                background: 'var(--surface-1)', border: '1px solid var(--border-med)',
-                                borderRadius: 2, color: 'var(--text-primary)', fontSize: 11,
-                                letterSpacing: '0.02em', transition: 'border-color 0.2s',
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'var(--border-strong)'}
-                            onBlur={e => e.target.style.borderColor = 'var(--border-med)'}
-                        />
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        <input type="text" value={search} onChange={e => onSearch(e.target.value)} placeholder="Search..." style={{ width: '100%', padding: '9px 12px 9px 34px', background: 'var(--surface-1)', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-primary)', fontSize: 11, letterSpacing: '0.02em', transition: 'border-color 0.2s' }}
+                            onFocus={e => e.target.style.borderColor = 'var(--border-strong)'} onBlur={e => e.target.style.borderColor = 'var(--border-med)'} />
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                            {['ALL', 'MAN', 'WOMAN'].map(g => (
-                                <Pill key={g} active={gender === g} onClick={() => onGender(g)}>{g}</Pill>
-                            ))}
+                            {['ALL', 'MAN', 'WOMAN'].map(g => (<Pill key={g} active={gender === g} onClick={() => onGender(g)}>{g}</Pill>))}
                             <div style={{ width: 1, height: 20, background: 'var(--border-med)', margin: '0 4px' }} />
-                            {sizes.map(s => (
-                                <button key={s} onClick={() => toggleSize(s)} style={{
-                                    width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    background: activeSizes.includes(s) ? 'var(--text-primary)' : 'transparent',
-                                    border: `1px solid ${activeSizes.includes(s) ? 'var(--text-primary)' : 'var(--border-med)'}`,
-                                    borderRadius: 2, color: activeSizes.includes(s) ? 'var(--void)' : 'var(--text-tertiary)',
-                                    fontSize: 10, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
-                                    fontFamily: 'var(--font-body)',
-                                }}>{s}</button>
-                            ))}
+                            <SizeDropdown activeSizes={activeSizes} onToggle={handleSizeToggle} />
                         </div>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <Pill active={availableOnly} onClick={() => onFilters({ ...filters, availableOnly: !availableOnly })}>
-                                AVAILABLE
-                            </Pill>
+                            <Pill active={availableOnly} onClick={() => onFilters({ ...filters, availableOnly: !availableOnly })}>AVAILABLE</Pill>
                             <div style={{ position: 'relative' }}>
-                                <select value={sortBy} onChange={e => onFilters({ ...filters, sortBy: e.target.value })} style={{
-                                    padding: '5px 24px 5px 10px', background: 'var(--surface-1)',
-                                    border: '1px solid var(--border-med)', borderRadius: 2,
-                                    color: 'var(--text-tertiary)', fontSize: 9, fontWeight: 500,
-                                    letterSpacing: '0.08em', cursor: 'pointer', appearance: 'none',
-                                    fontFamily: 'var(--font-body)',
-                                }}>
-                                    <option value="newest">NEWEST</option>
-                                    <option value="oldest">OLDEST</option>
-                                    <option value="price-asc">PRICE ↑</option>
-                                    <option value="price-desc">PRICE ↓</option>
+                                <select value={sortBy} onChange={e => onFilters({ ...filters, sortBy: e.target.value })} style={{ padding: '5px 24px 5px 10px', background: 'var(--surface-1)', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-tertiary)', fontSize: 9, fontWeight: 500, letterSpacing: '0.08em', cursor: 'pointer', appearance: 'none', fontFamily: 'var(--font-body)' }}>
+                                    <option value="newest">NEWEST</option><option value="oldest">OLDEST</option>
+                                    <option value="price-asc">PRICE ↑</option><option value="price-desc">PRICE ↓</option>
                                     <option value="title">A—Z</option>
                                 </select>
-                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3" style={{
-                                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none',
-                                }}><polyline points="6 9 12 15 18 9"/></svg>
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><polyline points="6 9 12 15 18 9"/></svg>
                             </div>
                         </div>
                     </div>
@@ -245,121 +268,67 @@
             );
         }
 
-        function ProductCard({ product, index }) {
+        function ProductCard({ product, index, onSimilar }) {
             const [imgLoaded, setImgLoaded] = useState(false);
             const [hovered, setHovered] = useState(false);
             const usd = Math.round(product.price * JPY_USD);
             const sizeStr = product.sizes.length > 0 ? product.sizes[0] : '—';
-
+            const handleSimilarClick = (e) => { e.preventDefault(); e.stopPropagation(); onSimilar(product); };
             return (
                 <a href={product.url} target="_blank" rel="noopener noreferrer"
                     onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-                    style={{
-                        display: 'block', background: 'var(--surface-0)',
-                        border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-soft)'}`,
-                        overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.25s ease',
-                        animation: `slideUp 0.35s ease ${Math.min(index * 0.015, 0.4)}s both`,
-                    }}
-                >
-                    <div style={{
-                        position: 'relative', paddingBottom: '130%', background: 'var(--surface-1)', overflow: 'hidden',
-                    }}>
+                    style={{ display: 'block', background: 'var(--surface-0)', border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-soft)'}`, overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.25s ease', animation: `slideUp 0.35s ease ${Math.min(index * 0.015, 0.4)}s both` }}>
+                    <div style={{ position: 'relative', paddingBottom: '130%', background: 'var(--surface-1)', overflow: 'hidden' }}>
                         {!imgLoaded && <div className="skeleton" style={{ position: 'absolute', inset: 0 }} />}
                         {product.image && (
-                            <img
-                                src={product.image.replace(/(\.\w+)\?/, '_600x600$1?')}
-                                alt={product.title} loading="lazy"
+                            <img src={product.image.replace(/(\.\w+)\?/, '_600x600$1?')} alt={product.title} loading="lazy"
                                 onLoad={() => setImgLoaded(true)}
-                                style={{
-                                    position: 'absolute', inset: 0, width: '100%', height: '100%',
-                                    objectFit: 'cover', opacity: imgLoaded ? 1 : 0,
-                                    transition: 'opacity 0.4s ease, transform 0.5s ease',
-                                    transform: hovered ? 'scale(1.04)' : 'scale(1)',
-                                    filter: !product.available ? 'saturate(0.3)' : 'none',
-                                }}
-                            />
+                                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.4s ease, transform 0.5s ease', transform: hovered ? 'scale(1.04)' : 'scale(1)', filter: !product.available ? 'saturate(0.3)' : 'none' }} />
                         )}
-                        {!product.available && (
-                            <div className="sold-overlay"><div className="sold-text">Sold</div></div>
-                        )}
+                        {!product.available && (<div className="sold-overlay"><div className="sold-text">Sold</div></div>)}
+                        <button className="similar-btn" onClick={handleSimilarClick}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d4d4d4" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        </button>
                     </div>
                     <div style={{ padding: '10px 10px 12px' }}>
-                        <h3 style={{
-                            fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 400,
-                            color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)',
-                            lineHeight: 1.35, marginBottom: 5,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{product.title}</h3>
-                        <div style={{
-                            fontSize: 13, fontWeight: 500,
-                            color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)',
-                            marginBottom: 8, letterSpacing: '0.02em',
-                        }}>
-                            ${usd}
-                            <span style={{
-                                color: 'var(--text-tertiary)', fontSize: 11, marginLeft: 6, fontWeight: 400,
-                            }}>¥{product.price.toLocaleString()}</span>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 400, color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.35, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.title}</h3>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: product.available ? 'var(--text-primary)' : 'var(--text-secondary)', marginBottom: 8, letterSpacing: '0.02em' }}>
+                            ${usd}<span style={{ color: 'var(--text-tertiary)', fontSize: 11, marginLeft: 6, fontWeight: 400 }}>¥{product.price.toLocaleString()}</span>
                         </div>
-                        <div style={{
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
-                                {sizeStr === 'ONE SIZE' || sizeStr === 'F' ? 'OS' : sizeStr}
-                                <span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>·</span>
-                                {product.gender}
+                                {sizeStr === 'ONE SIZE' || sizeStr === 'F' ? 'OS' : sizeStr}<span style={{ color: 'var(--text-muted)', margin: '0 4px' }}>·</span>{product.gender}
                             </span>
-                            <span style={{
-                                fontSize: 10, letterSpacing: '0.06em', color: 'var(--text-secondary)', fontStyle: 'italic',
-                            }}>{product.line}</span>
+                            <span style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{product.line}</span>
                         </div>
                     </div>
                 </a>
             );
         }
 
-        function ProductGrid({ products }) {
-            if (!products.length) {
-                return (
-                    <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-tertiary)' }}>
-                        <p style={{
-                            fontFamily: 'var(--font-display)', fontSize: 20, fontStyle: 'italic',
-                            fontWeight: 300, opacity: 0.5,
-                        }}>Nothing found</p>
-                    </div>
-                );
-            }
+        function ProductGrid({ products, onSimilar }) {
+            if (!products.length) return (<div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-tertiary)' }}><p style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontStyle: 'italic', fontWeight: 300, opacity: 0.5 }}>Nothing found</p></div>);
             return (
-                <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8,
-                }}>
-                    {products.map((p, i) => <ProductCard key={p.handle} product={p} index={i} />)}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                    {products.map((p, i) => <ProductCard key={p.handle} product={p} index={i} onSimilar={onSimilar} />)}
                 </div>
             );
         }
 
         function LoadingGrid() {
             return (
-                <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8,
-                }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {Array.from({ length: 24 }).map((_, i) => (
-                        <div key={i} style={{
-                            background: 'var(--surface-0)', border: '1px solid var(--border-soft)', overflow: 'hidden',
-                            animation: `fadeIn 0.3s ease ${i * 0.02}s both`,
-                        }}>
+                        <div key={i} style={{ background: 'var(--surface-0)', border: '1px solid var(--border-soft)', overflow: 'hidden', animation: `fadeIn 0.3s ease ${i * 0.02}s both` }}>
                             <div className="skeleton" style={{ paddingBottom: '130%' }} />
-                            <div style={{ padding: 10 }}>
-                                <div className="skeleton" style={{ height: 13, marginBottom: 6 }} />
-                                <div className="skeleton" style={{ height: 11, width: '50%' }} />
-                            </div>
+                            <div style={{ padding: 10 }}><div className="skeleton" style={{ height: 13, marginBottom: 6 }} /><div className="skeleton" style={{ height: 11, width: '50%' }} /></div>
                         </div>
                     ))}
                 </div>
             );
         }
 
-        // ─── URL state persistence ───
-
+        // ─── URL state ───
         function saveFiltersToURL(state) {
             const clean = {};
             if (state.brand !== 'ALL') clean.b = state.brand;
@@ -371,78 +340,39 @@
             const hash = Object.keys(clean).length ? '#' + encodeURIComponent(JSON.stringify(clean)) : '';
             history.replaceState(null, '', window.location.pathname + hash);
         }
+        function parseURLState() { try { const h = window.location.hash.slice(1); if (!h) return {}; return JSON.parse(decodeURIComponent(h)); } catch { return {}; } }
 
-        function parseURLState() {
-            try {
-                const hash = window.location.hash.slice(1);
-                if (!hash) return {};
-                return JSON.parse(decodeURIComponent(hash));
-            } catch { return {}; }
-        }
-
+        // ─── App ───
         function App() {
             const urlState = useMemo(() => parseURLState(), []);
-
             const [allProducts, setAllProducts] = useState([]);
             const [loading, setLoading] = useState(true);
             const [search, setSearch] = useState(urlState.q || '');
             const [brand, setBrand] = useState(urlState.b || 'ALL');
             const [gender, setGender] = useState(urlState.g || 'ALL');
-            const [filters, setFilters] = useState({
-                availableOnly: !!urlState.av,
-                sortBy: urlState.s || 'newest',
-                sizes: urlState.sz || [],
-            });
+            const [filters, setFilters] = useState({ availableOnly: !!urlState.av, sortBy: urlState.s || 'newest', sizes: urlState.sz || [] });
             const [visible, setVisible] = useState(60);
+            const [similarTo, setSimilarTo] = useState(null);
 
+            useEffect(() => { fetchAllProducts().then(p => { setAllProducts(p); setLoading(false); }); }, []);
             useEffect(() => {
-                fetchAllProducts().then(p => { setAllProducts(p); setLoading(false); });
-            }, []);
-
-            // Scroll-based infinite loading
-            useEffect(() => {
-                const handleScroll = () => {
-                    const scrollBottom = window.innerHeight + window.scrollY;
-                    const docHeight = document.documentElement.scrollHeight;
-                    if (docHeight - scrollBottom < 800) {
-                        setVisible(v => v + 40);
-                    }
-                };
+                const handleScroll = () => { if (document.documentElement.scrollHeight - (window.innerHeight + window.scrollY) < 800) setVisible(v => v + 40); };
                 window.addEventListener('scroll', handleScroll, { passive: true });
                 return () => window.removeEventListener('scroll', handleScroll);
             }, []);
+            useEffect(() => { setVisible(60); }, [search, brand, gender, filters, similarTo]);
+            useEffect(() => { saveFiltersToURL({ brand, gender, search, availableOnly: filters.availableOnly, sortBy: filters.sortBy, sizes: filters.sizes }); }, [brand, gender, search, filters]);
 
-            useEffect(() => { setVisible(60); }, [search, brand, gender, filters]);
-
-            // Persist filters to URL
-            useEffect(() => {
-                saveFiltersToURL({
-                    brand, gender, search,
-                    availableOnly: filters.availableOnly,
-                    sortBy: filters.sortBy,
-                    sizes: filters.sizes,
-                });
-            }, [brand, gender, search, filters]);
-
-            const handleLogoClick = () => {
-                setBrand('ALL'); setGender('ALL'); setSearch('');
-                setFilters({ availableOnly: false, sortBy: 'newest', sizes: [] });
-            };
-
-            const availSizes = useMemo(() => {
-                const s = new Set();
-                allProducts.forEach(p => p.sizes.forEach(x => s.add(x)));
-                return ['0', '1', '2', '3', 'F'].filter(x => s.has(x));
-            }, [allProducts]);
+            const handleSimilar = useCallback((product) => { setSimilarTo({ title: product.title, terms: extractSearchTerms(product.title), handle: product.handle }); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+            const clearSimilar = () => setSimilarTo(null);
+            const handleLogoClick = () => { setSimilarTo(null); setBrand('ALL'); setGender('ALL'); setSearch(''); setFilters({ availableOnly: false, sortBy: 'newest', sizes: [] }); };
 
             const filtered = useMemo(() => {
                 let r = allProducts;
                 if (brand !== 'ALL') r = r.filter(p => p.brand === brand);
                 if (gender !== 'ALL') r = r.filter(p => p.gender === gender);
-                if (search.trim()) {
-                    const q = search.toLowerCase().trim();
-                    r = r.filter(p => p.title.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q));
-                }
+                if (search.trim()) { const q = search.toLowerCase().trim(); r = r.filter(p => p.title.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q)); }
+                if (similarTo) { r = r.filter(p => { if (p.handle === similarTo.handle) return false; return similarTo.terms.some(term => p.title.toLowerCase().includes(term)); }); }
                 if (filters.availableOnly) r = r.filter(p => p.available);
                 if (filters.sizes.length) r = r.filter(p => filters.sizes.some(s => p.sizes.includes(s)));
                 const sorted = [...r];
@@ -454,7 +384,7 @@
                     case 'title': sorted.sort((a, b) => a.title.localeCompare(b.title)); break;
                 }
                 return sorted;
-            }, [allProducts, brand, gender, search, filters]);
+            }, [allProducts, brand, gender, search, filters, similarTo]);
 
             const shown = filtered.slice(0, visible);
             const hasMore = visible < filtered.length;
@@ -464,42 +394,33 @@
                     <Header count={filtered.length} loading={loading} onLogoClick={handleLogoClick} />
                     <div style={{ maxWidth: 1440, margin: '0 auto', padding: '0 16px' }}>
                         <BrandTabs active={brand} onChange={setBrand} />
-                        <Controls
-                            search={search} onSearch={setSearch}
-                            gender={gender} onGender={setGender}
-                            filters={filters} onFilters={setFilters}
-                            sizes={availSizes}
-                        />
+                        <Controls search={search} onSearch={setSearch} gender={gender} onGender={setGender} filters={filters} onFilters={setFilters} />
                         {!loading && (
-                            <div style={{
-                                fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', padding: '0 0 8px',
-                            }}>
-                                {shown.length === filtered.length
-                                    ? `${filtered.length} PRODUCTS`
-                                    : `${shown.length} OF ${filtered.length} PRODUCTS`
-                                }
+                            <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em', padding: '0 0 8px' }}>
+                                {shown.length === filtered.length ? `${filtered.length} PRODUCTS` : `${shown.length} OF ${filtered.length} PRODUCTS`}
+                            </div>
+                        )}
+                        {similarTo && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, marginBottom: 10, flexWrap: 'wrap' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                <span style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>Similar to <span style={{ fontStyle: 'italic', color: 'var(--text-primary)' }}>{similarTo.title}</span></span>
+                                <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>[{similarTo.terms.join(', ')}]</span>
+                                <button onClick={clearSimilar} style={{ marginLeft: 'auto', background: 'none', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-tertiary)', fontSize: 9, padding: '2px 8px', cursor: 'pointer', letterSpacing: '0.06em', transition: 'all 0.15s' }}
+                                onMouseEnter={e => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.color = 'var(--text-secondary)'; }}
+                                onMouseLeave={e => { e.target.style.borderColor = 'var(--border-med)'; e.target.style.color = 'var(--text-tertiary)'; }}>CLEAR</button>
                             </div>
                         )}
                         <div style={{ paddingBottom: 80 }}>
-                            {loading ? <LoadingGrid /> : (
-                                <>
-                                    <ProductGrid products={shown} />
-                                    {hasMore && (
-                                        <div style={{ textAlign: 'center', padding: '30px 0' }}>
-                                            <button onClick={() => setVisible(v => v + 60)} style={{
-                                                padding: '8px 24px', background: 'none',
-                                                border: '1px solid var(--border-med)', borderRadius: 2,
-                                                color: 'var(--text-tertiary)', fontSize: 9,
-                                                letterSpacing: '0.1em', cursor: 'pointer',
-                                                transition: 'all 0.2s', fontFamily: 'var(--font-body)',
-                                            }}
-                                            onMouseEnter={e => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.color = 'var(--text-secondary)'; }}
-                                            onMouseLeave={e => { e.target.style.borderColor = 'var(--border-med)'; e.target.style.color = 'var(--text-tertiary)'; }}
-                                            >LOAD MORE</button>
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                            {loading ? <LoadingGrid /> : (<>
+                                <ProductGrid products={shown} onSimilar={handleSimilar} />
+                                {hasMore && (
+                                    <div style={{ textAlign: 'center', padding: '30px 0' }}>
+                                        <button onClick={() => setVisible(v => v + 60)} style={{ padding: '8px 24px', background: 'none', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-tertiary)', fontSize: 9, letterSpacing: '0.1em', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-body)' }}
+                                        onMouseEnter={e => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.color = 'var(--text-secondary)'; }}
+                                        onMouseLeave={e => { e.target.style.borderColor = 'var(--border-med)'; e.target.style.color = 'var(--text-tertiary)'; }}>LOAD MORE</button>
+                                    </div>
+                                )}
+                            </>)}
                         </div>
                     </div>
                 </div>
