@@ -92,28 +92,179 @@
             return allProducts;
         }
 
-        // ─── Smart Similar Search ───
+        // ─── Smart Search System ───
         const BRAND_WORDS = ['if', 'six', 'was', 'nine', 'ifsixwasnine', 'l.g.b.', 'lgb', 'l.g.b', 'circus', 'maniac'];
+
+        // Garment type codes — these are deprioritized in similar search (model names rank higher)
+        const TYPE_CODES = new Set([
+            'ls', 'hs', 'lsc', 'lsv', 'hsc', 'hsv', 'lsm', 'lsf', 'lsw',
+            'jk', 'pt', 'sbcm', 'sbb', 'bcm', 'tk', 'txs', 'ct', 'vs', 'sw',
+            'pk', 'bl', 'sh', 'bg', 'bt', 'cs', 'op', 'sk', 'ht', 'blt', 'gv',
+            'trd', 'btf',
+        ]);
+
+        // Code → expanded synonyms for broader matching
         const CODE_SYNONYMS = {
             'jk': ['jk', 'jacket'], 'tk': ['tk', 'tank'], 'txs': ['txs', 'shirt'],
             'trd': ['trd', 'trousers', 'pants'], 'bcm': ['bcm', 'jeans', 'denim'],
             'sbcm': ['sbcm', 'jeans', 'denim'], 'btf': ['btf', 'jeans', 'denim'],
+            'sbb': ['sbb', 'jeans', 'denim'],
             'ct': ['ct', 'coat'], 'vs': ['vs', 'vest'], 'sw': ['sw', 'sweater'],
             'pk': ['pk', 'parka'], 'bl': ['bl', 'blouson'], 'sh': ['sh', 'shorts'],
             'bg': ['bg', 'bag'], 'bt': ['bt', 'boots', 'boot'], 'cs': ['cs', 'cutsew'],
             'op': ['op', 'onepiece', 'dress'], 'sk': ['sk', 'skirt'], 'ht': ['ht', 'hat'],
             'blt': ['blt', 'belt'], 'gv': ['gv', 'gloves'],
+            'ls': ['ls', 'longsleeve', 'long sleeve'], 'hs': ['hs', 'halfsleeve', 'half sleeve'],
+            'pt': ['pt', 'pants', 'trousers'],
         };
-        function extractSearchTerms(title) {
-            const parts = title.replace(/\//g, ' ').replace(/[()]/g, '').toLowerCase().split(/\s+/);
-            const meaningful = parts.filter(p => p.length > 0 && !BRAND_WORDS.includes(p));
-            const searchTerms = new Set();
-            for (const part of meaningful) {
-                const code = Object.keys(CODE_SYNONYMS).find(c => part === c || part.match(new RegExp(`^${c}\\d*$`)));
-                if (code) { CODE_SYNONYMS[code].forEach(s => searchTerms.add(s)); searchTerms.add(code); }
-                else if (part.length > 1) searchTerms.add(part);
+
+        // Normalize a title for matching: treat - and / as spaces
+        function normalizeTitle(title) {
+            return title.replace(/[\/-]/g, ' ').replace(/[()]/g, '').toLowerCase();
+        }
+
+        // Split a word into sub-variations:
+        // "ss-riders" → ["ss-riders", "ss", "riders"]
+        // "tkm" → ["tkm", "tk"] (strip trailing letters if base is a known code)
+        // "mudmax" → ["mudmax", "mud", "max"] (try splitting compound words)
+        // "belt-002" → ["belt-002", "belt", "002"] (already handled by - split)
+        // "jk3" → ["jk3", "jk"] (strip trailing numbers)
+        // "jk-w" → ["jk-w", "jk", "w"] → ["jk", "w"]
+        function expandWord(word) {
+            const results = new Set();
+            results.add(word);
+
+            // Split on hyphens
+            if (word.includes('-')) {
+                word.split('-').filter(p => p.length > 0).forEach(p => results.add(p));
             }
-            return [...searchTerms];
+
+            // Strip trailing numbers: jk3 → jk, bcm2 → bcm
+            const noNums = word.replace(/\d+$/, '');
+            if (noNums.length >= 2 && noNums !== word) results.add(noNums);
+
+            // Strip trailing single letter suffix: tkm → tk, jkw → jk
+            // But only if the base (without suffix) is a known code
+            if (word.length >= 3) {
+                const base2 = word.slice(0, 2);
+                const base3 = word.slice(0, 3);
+                if (CODE_SYNONYMS[base2] || TYPE_CODES.has(base2)) results.add(base2);
+                if (CODE_SYNONYMS[base3] || TYPE_CODES.has(base3)) results.add(base3);
+            }
+
+            // Try splitting compound words (camelCase-like or just consonant clusters)
+            // Look for common word boundaries in product names
+            // Strategy: try splitting at every position 2..len-2 and check if both halves appear in other products
+            // Simpler: just try split at positions where a known word starts
+            if (word.length >= 5 && !word.includes('-')) {
+                for (let i = 2; i <= word.length - 2; i++) {
+                    const left = word.slice(0, i);
+                    const right = word.slice(i);
+                    if (left.length >= 2 && right.length >= 2) {
+                        results.add(left);
+                        results.add(right);
+                    }
+                }
+            }
+
+            return [...results];
+        }
+
+        // Extract search terms from a product title, categorized as model vs type
+        function extractSearchTerms(title) {
+            const normalized = normalizeTitle(title);
+            const parts = normalized.split(/\s+/).filter(p => p.length > 0 && !BRAND_WORDS.includes(p));
+
+            const modelTerms = new Set();
+            const typeTerms = new Set();
+
+            for (const part of parts) {
+                const expanded = expandWord(part);
+
+                for (const word of expanded) {
+                    if (word.length < 2) continue;
+
+                    // Check if this word (or its base) is a type code
+                    const isType = TYPE_CODES.has(word) ||
+                        Object.keys(CODE_SYNONYMS).some(c => word === c);
+
+                    // Add synonyms for known codes
+                    const code = Object.keys(CODE_SYNONYMS).find(c =>
+                        word === c || word.match(new RegExp(`^${c}\\d*$`))
+                    );
+
+                    if (code) {
+                        const target = isType ? typeTerms : modelTerms;
+                        CODE_SYNONYMS[code].forEach(s => target.add(s));
+                        target.add(code);
+                    } else if (isType) {
+                        typeTerms.add(word);
+                    } else {
+                        // Skip pure numbers like "002" unless they're meaningful
+                        if (/^\d+$/.test(word) && word.length <= 3) continue;
+                        modelTerms.add(word);
+                    }
+                }
+            }
+
+            return {
+                model: [...modelTerms],
+                type: [...typeTerms],
+                all: [...modelTerms, ...typeTerms],
+            };
+        }
+
+        // Smart search bar matching: "mudmax" matches "mud max", "mudmax", etc.
+        function searchMatches(product, query) {
+            const q = query.toLowerCase().trim();
+            const title = normalizeTitle(product.title);
+            const handle = product.handle.toLowerCase();
+
+            // Direct match
+            if (title.includes(q) || handle.includes(q)) return true;
+
+            // Try without spaces: "mud max" query matches "mudmax" title
+            const qNoSpaces = q.replace(/\s+/g, '');
+            const titleNoSpaces = title.replace(/\s+/g, '');
+            if (titleNoSpaces.includes(qNoSpaces)) return true;
+            if (qNoSpaces.length >= 3 && titleNoSpaces.includes(qNoSpaces)) return true;
+
+            // Try splitting query as compound: "mudmax" → check "mud" AND "max" both in title
+            if (q.length >= 5 && !q.includes(' ')) {
+                for (let i = 2; i <= q.length - 2; i++) {
+                    const left = q.slice(0, i);
+                    const right = q.slice(i);
+                    if (left.length >= 2 && right.length >= 2) {
+                        if (title.includes(left) && title.includes(right)) return true;
+                    }
+                }
+            }
+
+            // Also try expanded words from query
+            const qParts = q.replace(/[-\/]/g, ' ').split(/\s+/).filter(p => p.length >= 2);
+            if (qParts.length > 1) {
+                // Multi-word query: all parts must match
+                if (qParts.every(p => title.includes(p) || titleNoSpaces.includes(p))) return true;
+            }
+
+            return false;
+        }
+
+        // Score a product for similar search ranking
+        // Higher score = more relevant (model match > type match)
+        function similarScore(product, terms) {
+            const title = normalizeTitle(product.title);
+            const titleNoSpaces = title.replace(/\s+/g, '');
+            let score = 0;
+
+            for (const term of terms.model) {
+                if (title.includes(term) || titleNoSpaces.includes(term)) score += 10;
+            }
+            for (const term of terms.type) {
+                if (title.includes(term) || titleNoSpaces.includes(term)) score += 1;
+            }
+
+            return score;
         }
 
         // ─── Size mapping ───
@@ -427,7 +578,11 @@
             useEffect(() => { setVisible(60); }, [search, brand, gender, filters, similarTo]);
             useEffect(() => { saveFiltersToURL({ brand, gender, search, availableOnly: filters.availableOnly, sortBy: filters.sortBy, sizes: filters.sizes }); }, [brand, gender, search, filters]);
 
-            const handleSimilar = useCallback((product) => { setSimilarTo({ title: product.title, terms: extractSearchTerms(product.title), handle: product.handle }); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }, []);
+            const handleSimilar = useCallback((product) => {
+                const terms = extractSearchTerms(product.title);
+                setSimilarTo({ title: product.title, terms, handle: product.handle });
+                setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
+            }, []);
             const clearSimilar = () => setSimilarTo(null);
             const handleLogoClick = () => { setSimilarTo(null); setBrand('ALL'); setGender('ALL'); setSearch(''); setFilters({ availableOnly: false, sortBy: 'newest', sizes: [] }); };
 
@@ -435,17 +590,42 @@
                 let r = allProducts;
                 if (brand !== 'ALL') r = r.filter(p => p.brand === brand);
                 if (gender !== 'ALL') r = r.filter(p => p.gender === gender);
-                if (search.trim()) { const q = search.toLowerCase().trim(); r = r.filter(p => p.title.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q)); }
-                if (similarTo) { r = r.filter(p => { if (p.handle === similarTo.handle) return false; return similarTo.terms.some(term => p.title.toLowerCase().includes(term)); }); }
+                if (search.trim()) {
+                    r = r.filter(p => searchMatches(p, search));
+                }
+                if (similarTo) {
+                    r = r.filter(p => {
+                        if (p.handle === similarTo.handle) return false;
+                        return similarScore(p, similarTo.terms) > 0;
+                    });
+                }
                 if (filters.availableOnly) r = r.filter(p => p.available);
                 if (filters.sizes.length) r = r.filter(p => filters.sizes.some(s => p.sizes.includes(s)));
-                const sorted = [...r];
-                switch (filters.sortBy) {
-                    case 'newest': sorted.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')); break;
-                    case 'oldest': sorted.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')); break;
-                    case 'price-asc': sorted.sort((a, b) => a.price - b.price); break;
-                    case 'price-desc': sorted.sort((a, b) => b.price - a.price); break;
-                    case 'title': sorted.sort((a, b) => a.title.localeCompare(b.title)); break;
+                let sorted = [...r];
+                // If similar search is active, sort by relevance first, then by selected sort
+                if (similarTo) {
+                    sorted.sort((a, b) => {
+                        const sa = similarScore(a, similarTo.terms);
+                        const sb = similarScore(b, similarTo.terms);
+                        if (sb !== sa) return sb - sa; // higher score first
+                        // Tiebreak with selected sort
+                        switch (filters.sortBy) {
+                            case 'newest': return (b.createdAt || '').localeCompare(a.createdAt || '');
+                            case 'oldest': return (a.createdAt || '').localeCompare(b.createdAt || '');
+                            case 'price-asc': return a.price - b.price;
+                            case 'price-desc': return b.price - a.price;
+                            case 'title': return a.title.localeCompare(b.title);
+                            default: return 0;
+                        }
+                    });
+                } else {
+                    switch (filters.sortBy) {
+                        case 'newest': sorted.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')); break;
+                        case 'oldest': sorted.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')); break;
+                        case 'price-asc': sorted.sort((a, b) => a.price - b.price); break;
+                        case 'price-desc': sorted.sort((a, b) => b.price - a.price); break;
+                        case 'title': sorted.sort((a, b) => a.title.localeCompare(b.title)); break;
+                    }
                 }
                 return sorted;
             }, [allProducts, brand, gender, search, filters, similarTo]);
@@ -468,7 +648,6 @@
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border-med)', borderRadius: 2, marginBottom: 10, flexWrap: 'wrap' }}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                                 <span style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>Similar to <span style={{ fontStyle: 'italic', color: 'var(--text-primary)' }}>{similarTo.title}</span></span>
-                                <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>[{similarTo.terms.join(', ')}]</span>
                                 <button onClick={clearSimilar} style={{ marginLeft: 'auto', background: 'none', border: '1px solid var(--border-med)', borderRadius: 2, color: 'var(--text-tertiary)', fontSize: 9, padding: '2px 8px', cursor: 'pointer', letterSpacing: '0.06em', transition: 'all 0.15s' }}
                                 onMouseEnter={e => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.color = 'var(--text-secondary)'; }}
                                 onMouseLeave={e => { e.target.style.borderColor = 'var(--border-med)'; e.target.style.color = 'var(--text-tertiary)'; }}>CLEAR</button>
